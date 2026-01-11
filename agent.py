@@ -247,6 +247,24 @@ def resolve_path(path_str: str) -> Path:
     return path
 
 
+def to_relative_path(path_str: str) -> str:
+    """Convert an absolute path to a relative path for cleaner display.
+
+    If the path is within the current working directory, returns a relative path.
+    Otherwise returns the original path.
+    """
+    try:
+        path = Path(path_str)
+        cwd = Path.cwd()
+        # Check if path is within cwd
+        rel = path.relative_to(cwd)
+        # Return with ./ prefix for clarity
+        return f"./{rel}"
+    except ValueError:
+        # Path is not relative to cwd, return as-is
+        return path_str
+
+
 # ============== TOOLS ==============
 
 def read_file(filename: str) -> dict[str, Any]:
@@ -516,21 +534,21 @@ def execute_tool(name: str, arguments: dict) -> str:
 def format_tool_call(name: str, args: dict) -> str:
     """Format a tool call for clean display."""
     if name == "write_file":
-        path = args.get("path", "?")
+        path = to_relative_path(args.get("path", "?"))
         content = args.get("content", "")
         lines = content.count('\n') + 1 if content else 0
         return f"[Write] {path} ({lines} lines)"
 
     elif name == "edit_file":
-        path = args.get("path", "?")
+        path = to_relative_path(args.get("path", "?"))
         return f"[Edit] {path}"
 
     elif name == "read_file":
-        filename = args.get("filename", "?")
+        filename = to_relative_path(args.get("filename", "?"))
         return f"[Read] {filename}"
 
     elif name == "list_files":
-        path = args.get("path", ".")
+        path = to_relative_path(args.get("path", "."))
         return f"[List] {path}"
 
     elif name == "run_bash":
@@ -564,7 +582,7 @@ def format_tool_result(name: str, result_json: str, args: dict = None) -> str:
         return f"Error: {result.get('error', 'Unknown error')}"
 
     if name == "write_file":
-        path = result.get('path', '?')
+        path = to_relative_path(result.get('path', '?'))
         output = f"Created {path}"
         # Show first 8 lines as preview with syntax highlighting
         if args and "content" in args:
@@ -580,7 +598,7 @@ def format_tool_result(name: str, result_json: str, args: dict = None) -> str:
         return output
 
     elif name == "edit_file":
-        path = result.get('path', '?')
+        path = to_relative_path(result.get('path', '?'))
         output = f"Edited {path}"
         # Show diff if we have old_text and new_text
         if args and "old_text" in args and "new_text" in args:
@@ -593,11 +611,13 @@ def format_tool_result(name: str, result_json: str, args: dict = None) -> str:
     elif name == "read_file":
         content = result.get("content", "")
         lines = content.count('\n') + 1 if content else 0
-        return f"Read {lines} lines from {result.get('file_path', '?')}"
+        path = to_relative_path(result.get('file_path', '?'))
+        return f"Read {lines} lines from {path}"
 
     elif name == "list_files":
         items = result.get("items", [])
-        return f"Found {len(items)} items in {result.get('path', '?')}"
+        path = to_relative_path(result.get('path', '?'))
+        return f"Found {len(items)} items in {path}"
 
     elif name == "run_bash":
         # Check if command was blocked
