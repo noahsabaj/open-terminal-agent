@@ -732,9 +732,14 @@ def run_agent():
 
     messages = []
 
-    # System message to set context (with current date for accurate web searches)
+    # System message to set context (with current date and working directory)
     current_date = datetime.now().strftime("%A, %B %d, %Y")
+    current_dir = str(Path.cwd())
+    project_name = Path.cwd().name
+
     system_msg = f"""Today's date is {current_date}.
+You are working in: {current_dir}
+Project/folder name: {project_name}
 
 You are a helpful coding assistant with access to these tools:
 - read_file: Read file contents
