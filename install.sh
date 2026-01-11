@@ -59,9 +59,18 @@ fi
 
 # Check for ollama
 if ! command -v ollama &> /dev/null; then
-    echo -e "${YELLOW}!${NC} Ollama not found - installing..."
-    curl -fsSL https://ollama.com/install.sh | sh
-    echo -e "${GREEN}✓${NC} Ollama installed"
+    if [[ "$OS" == "linux" ]]; then
+        echo -e "${YELLOW}!${NC} Ollama not found - installing..."
+        curl -fsSL https://ollama.com/install.sh | sh
+        echo -e "${GREEN}✓${NC} Ollama installed"
+    else
+        echo -e "${RED}!${NC} Ollama not found"
+        echo ""
+        echo "  Download Ollama from: ${CYAN}https://ollama.com/download${NC}"
+        echo "  Install the .dmg, then run this script again."
+        echo ""
+        exit 1
+    fi
 else
     echo -e "${GREEN}✓${NC} Ollama found"
 fi
