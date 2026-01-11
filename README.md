@@ -14,14 +14,18 @@ A coding agent for the terminal, powered by Ollama Cloud.
 curl -fsSL https://raw.githubusercontent.com/noahsabaj/terminal-agent/main/install.sh | bash
 ```
 
-**Windows:** Coming soon.
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/noahsabaj/terminal-agent/main/install.ps1 | iex
+```
 
 The installer handles everything:
-- Installs [Ollama](https://ollama.com) if not present
-- Sets up Podman machine on macOS automatically
+- Installs [Ollama](https://ollama.com) automatically (Linux) or prompts to download (macOS/Windows)
+- Sets up Podman machine automatically
 - Prompts you to run `ollama signin` for cloud model access
 
-Only requirement: [Podman](https://podman.io/docs/installation) must be installed first.
+Requirements:
+- [Podman](https://podman.io/docs/installation) (Linux) or [Podman Desktop](https://podman-desktop.io/downloads) (macOS/Windows)
 
 ## Usage
 
