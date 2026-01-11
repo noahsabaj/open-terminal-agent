@@ -16,7 +16,12 @@ curl -fsSL https://raw.githubusercontent.com/noahsabaj/terminal-agent/main/insta
 
 **Windows:** Coming soon.
 
-Requires [Podman](https://podman.io/docs/installation). On macOS, run `podman machine init && podman machine start` first.
+The installer handles everything:
+- Installs [Ollama](https://ollama.com) if not present
+- Sets up Podman machine on macOS automatically
+- Prompts you to run `ollama signin` for cloud model access
+
+Only requirement: [Podman](https://podman.io/docs/installation) must be installed first.
 
 ## Usage
 

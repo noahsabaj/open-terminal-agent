@@ -18,6 +18,14 @@ echo "  │  ▽  │"
 echo "  ╰─────╯"
 echo -e "${NC}"
 
+# Detect OS
+OS="unknown"
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    OS="linux"
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    OS="macos"
+fi
+
 # Check for podman
 if ! command -v podman &> /dev/null; then
     echo -e "${RED}Error: Podman is required but not installed.${NC}"
@@ -32,6 +40,41 @@ if ! command -v podman &> /dev/null; then
 fi
 
 echo -e "${GREEN}✓${NC} Podman found"
+
+# macOS: Check if podman machine is running
+if [[ "$OS" == "macos" ]]; then
+    if ! podman machine inspect &> /dev/null; then
+        echo -e "${YELLOW}!${NC} Podman machine not initialized"
+        echo -e "  Initializing podman machine..."
+        podman machine init
+    fi
+
+    if ! podman machine inspect --format '{{.State}}' 2>/dev/null | grep -q "running"; then
+        echo -e "${YELLOW}!${NC} Starting podman machine..."
+        podman machine start
+    fi
+
+    echo -e "${GREEN}✓${NC} Podman machine running"
+fi
+
+# Check for ollama
+if ! command -v ollama &> /dev/null; then
+    echo -e "${YELLOW}!${NC} Ollama not found - installing..."
+    curl -fsSL https://ollama.com/install.sh | sh
+    echo -e "${GREEN}✓${NC} Ollama installed"
+else
+    echo -e "${GREEN}✓${NC} Ollama found"
+fi
+
+# Check if user needs to sign in to Ollama (for cloud models)
+echo ""
+echo -e "${YELLOW}!${NC} Terminal Agent uses cloud models (e.g., minimax-m2.1:cloud)"
+echo -e "  If you haven't already, sign in to Ollama:"
+echo ""
+echo -e "  ${CYAN}ollama signin${NC}"
+echo ""
+read -p "Press Enter to continue (or Ctrl+C to sign in first)..."
+echo ""
 
 # Create directories
 INSTALL_DIR="$HOME/.terminal-agent"
