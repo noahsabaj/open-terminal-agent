@@ -1,5 +1,5 @@
 # Terminal Agent - Windows Installer
-# irm https://raw.githubusercontent.com/noahsabaj/terminal-agent/main/install.ps1 | iex
+# irm https://raw.githubusercontent.com/noahsabaj/open-terminal-agent/main/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 

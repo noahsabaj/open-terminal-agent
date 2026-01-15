@@ -1,6 +1,6 @@
 #!/bin/bash
 # Terminal Agent - One-line installer
-# curl -fsSL https://raw.githubusercontent.com/noahsabaj/terminal-agent/main/install.sh | bash
+# curl -fsSL https://raw.githubusercontent.com/noahsabaj/open-terminal-agent/main/install.sh | bash
 
 set -e
 

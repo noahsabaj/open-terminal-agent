@@ -36,9 +36,9 @@ dependencies = [
 terminal-agent = "terminal_agent:run_agent"
 
 [project.urls]
-Homepage = "https://github.com/noahsabaj/terminal-agent"
-Repository = "https://github.com/noahsabaj/terminal-agent"
-Issues = "https://github.com/noahsabaj/terminal-agent/issues"
+Homepage = "https://github.com/noahsabaj/open-terminal-agent"
+Repository = "https://github.com/noahsabaj/open-terminal-agent"
+Issues = "https://github.com/noahsabaj/open-terminal-agent/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/terminal_agent"]

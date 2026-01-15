@@ -14,12 +14,12 @@ pip install open-terminal-agent
 
 **macOS / Linux (one-liner):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/noahsabaj/terminal-agent/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/noahsabaj/open-terminal-agent/main/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/noahsabaj/terminal-agent/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/noahsabaj/open-terminal-agent/main/install.ps1 | iex
 ```
 
 ### Requirements
