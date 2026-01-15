@@ -87,7 +87,7 @@ Inside the agent:
 ## Uninstall
 
 ```bash
-pip uninstall terminal-agent
+pip uninstall open-terminal-agent
 ```
 
 ## License
