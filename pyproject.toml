@@ -42,3 +42,20 @@ Issues = "https://github.com/noahsabaj/open-terminal-agent/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/terminal_agent"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/terminal_agent/agent.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true
+no_implicit_optional = true

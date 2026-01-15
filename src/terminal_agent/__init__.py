@@ -1,6 +1,6 @@
 """Terminal Agent - A coding agent for the terminal, powered by Ollama Cloud."""
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 try:
     __version__ = version("open-terminal-agent")

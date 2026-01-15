@@ -12,13 +12,11 @@ Run with: python test_markdown_rendering.py
 
 from markdown_it import MarkdownIt
 from markdown_it.tree import SyntaxTreeNode
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.syntax import Syntax
-from rich.text import Text
-from rich.markdown import Markdown as RichMarkdown
 from rich import box
+from rich.console import Console
+from rich.markdown import Markdown as RichMarkdown
+from rich.panel import Panel
+from rich.table import Table
 
 console = Console()
 
@@ -258,9 +256,9 @@ def demo_custom_table_rendering():
 
     for token in tokens:
         if token.type == "thead_open":
-            in_header = True
+            in_header = True  # noqa: F841
         elif token.type == "thead_close":
-            in_header = False
+            in_header = False  # noqa: F841
             if current_row:
                 headers = current_row
                 current_row = []
@@ -395,11 +393,13 @@ def demo_comparison():
 
 
 def main():
-    console.print(Panel.fit(
-        "[bold white]markdown-it-py + Rich Terminal Rendering Test[/]\n"
-        "Validating parsing and rendering capabilities",
-        border_style="bright_blue"
-    ))
+    console.print(
+        Panel.fit(
+            "[bold white]markdown-it-py + Rich Terminal Rendering Test[/]\n"
+            "Validating parsing and rendering capabilities",
+            border_style="bright_blue",
+        )
+    )
 
     demo_token_parsing()
     demo_syntax_tree()

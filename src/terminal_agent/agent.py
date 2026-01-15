@@ -6,30 +6,30 @@ A coding agent with 7 tools: read_file, list_files, write_file, edit_file, run_b
 
 import argparse
 import json
-import readline  # Enables arrow keys, history, and line editing in input()
 import re
+import readline  # Enables arrow keys, history, and line editing in input()
 import subprocess
 import sys
 import threading
 import time
 from datetime import datetime
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from ollama import chat, ChatResponse, pull, web_search, web_fetch
+from ollama import ChatResponse, chat, pull, web_fetch, web_search
 from pygments import highlight
-from pygments.lexers import get_lexer_for_filename, TextLexer
 from pygments.formatters import TerminalFormatter
+from pygments.lexers import TextLexer, get_lexer_for_filename
 from rich.console import Console
 from rich.markdown import Markdown
 
 # Terminal colors
-USER_COLOR = "\033[94m"      # Blue
+USER_COLOR = "\033[94m"  # Blue
 ASSISTANT_COLOR = "\033[93m"  # Yellow
-THINKING_COLOR = "\033[90m"   # Gray
-TOOL_COLOR = "\033[92m"       # Green
-ERROR_COLOR = "\033[91m"      # Red
+THINKING_COLOR = "\033[90m"  # Gray
+TOOL_COLOR = "\033[92m"  # Green
+ERROR_COLOR = "\033[91m"  # Red
 RESET = "\033[0m"
 
 # =============================================================================
@@ -62,16 +62,13 @@ DANGEROUS_PATTERNS = {
     r"dd\s+.*if=/dev/(zero|random|urandom).*of=/dev/[a-z]": "Overwrites an entire disk with zeros/random data - complete data destruction",
     r">\s*/dev/[a-z]d[a-z]": "Redirects output to overwrite a raw disk device - destroys all data",
     r"shred\s+.*(/dev/[a-z]|/boot|/etc|/usr|/var)": "Securely wipes system-critical locations - unrecoverable destruction",
-
     # Fork bomb
     r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:": "Fork bomb - spawns infinite processes until the system crashes from resource exhaustion",
-
     # Permission disasters
     r"chmod\s+(-[a-zA-Z]*\s+)*777\s+/": "Makes the entire filesystem world-readable/writable - catastrophic security vulnerability",
     r"chmod\s+(-[a-zA-Z]*\s+)*000\s+/": "Removes all permissions from the entire filesystem - system becomes unusable",
     r"chmod\s+.*-R\s+.*\s+/\s*$": "Recursively changes permissions on root filesystem - can break the entire system",
     r"chown\s+.*-R\s+.*\s+/\s*$": "Recursively changes ownership of root filesystem - can break the entire system",
-
     # System control
     r"\bshutdown\b": "Shuts down the computer",
     r"\breboot\b": "Reboots the computer",
@@ -79,12 +76,10 @@ DANGEROUS_PATTERNS = {
     r"\bhalt\b": "Halts the system",
     r"\binit\s+[06]\b": "Changes system runlevel to shutdown (0) or reboot (6)",
     r"kill\s+-9\s+-1": "Sends SIGKILL to ALL processes - crashes the entire system immediately",
-
     # Security-critical files
     r">\s*/etc/passwd": "Overwrites the user database - locks everyone out of the system",
     r">\s*/etc/shadow": "Overwrites the password database - breaks all authentication",
     r"rm\s+.*(/etc/passwd|/etc/shadow|/etc/sudoers)": "Deletes critical authentication files - breaks system security",
-
     # Network/firewall
     r"iptables\s+-F": "Flushes all firewall rules - removes network security protections",
     r"ufw\s+disable": "Disables the firewall entirely - exposes system to network attacks",
@@ -107,16 +102,17 @@ def ensure_model_available(model_name: str) -> bool:
     try:
         pull(model_name)
         return True
-    except Exception as e:
+    except Exception:
         return False
 
 
 # Permission modes
 class PermissionMode:
     """Permission levels for tool execution."""
-    DEFAULT = "default"        # Prompt for writes and bash
+
+    DEFAULT = "default"  # Prompt for writes and bash
     ACCEPT_EDITS = "accept-edits"  # Auto-approve edits, prompt for bash
-    YOLO = "yolo"              # Auto-approve everything
+    YOLO = "yolo"  # Auto-approve everything
 
 
 PERMISSION_MODE = PermissionMode.DEFAULT
@@ -136,8 +132,8 @@ class TokenTracker:
 
     def add(self, response):
         """Add tokens from a response."""
-        self.total_input += getattr(response, 'prompt_eval_count', 0) or 0
-        self.total_output += getattr(response, 'eval_count', 0) or 0
+        self.total_input += getattr(response, "prompt_eval_count", 0) or 0
+        self.total_output += getattr(response, "eval_count", 0) or 0
 
     @property
     def total(self):
@@ -203,8 +199,8 @@ def syntax_highlight(code: str, filename: str) -> str:
 
 
 # Diff colors (background)
-RED_BG = "\033[41m"      # Red background for removed
-GREEN_BG = "\033[42m"    # Green background for added
+RED_BG = "\033[41m"  # Red background for removed
+GREEN_BG = "\033[42m"  # Green background for added
 BLACK_TEXT = "\033[30m"  # Black text for contrast
 
 
@@ -213,14 +209,14 @@ def format_diff(old_text: str, new_text: str) -> str:
     lines = []
 
     # Show removed lines (red background)
-    for line in old_text.split('\n'):
+    for line in old_text.split("\n"):
         lines.append(f"{RED_BG}{BLACK_TEXT}- {line}{RESET}")
 
     # Show added lines (green background)
-    for line in new_text.split('\n'):
+    for line in new_text.split("\n"):
         lines.append(f"{GREEN_BG}{BLACK_TEXT}+ {line}{RESET}")
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 def resolve_path(path_str: str) -> Path:
@@ -251,6 +247,7 @@ def to_relative_path(path_str: str) -> str:
 
 # ============== TOOLS ==============
 
+
 def read_file(filename: str) -> dict[str, Any]:
     """Read the full contents of a file.
 
@@ -263,11 +260,7 @@ def read_file(filename: str) -> dict[str, Any]:
     try:
         full_path = resolve_path(filename)
         content = full_path.read_text(encoding="utf-8")
-        return {
-            "success": True,
-            "file_path": str(full_path),
-            "content": content
-        }
+        return {"success": True, "file_path": str(full_path), "content": content}
     except FileNotFoundError:
         return {"success": False, "error": f"File not found: {filename}"}
     except Exception as e:
@@ -290,16 +283,9 @@ def list_files(path: str = ".") -> dict[str, Any]:
 
         items = []
         for item in sorted(full_path.iterdir()):
-            items.append({
-                "name": item.name,
-                "type": "directory" if item.is_dir() else "file"
-            })
+            items.append({"name": item.name, "type": "directory" if item.is_dir() else "file"})
 
-        return {
-            "success": True,
-            "path": str(full_path),
-            "items": items
-        }
+        return {"success": True, "path": str(full_path), "items": items}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -318,11 +304,7 @@ def write_file(path: str, content: str) -> dict[str, Any]:
         full_path = resolve_path(path)
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content, encoding="utf-8")
-        return {
-            "success": True,
-            "path": str(full_path),
-            "action": "created"
-        }
+        return {"success": True, "path": str(full_path), "action": "created"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -349,26 +331,18 @@ def edit_file(path: str, old_text: str, new_text: str) -> dict[str, Any]:
         content = full_path.read_text(encoding="utf-8")
         count = content.count(old_text)
         if count == 0:
-            return {
-                "success": False,
-                "error": "old_text not found in file",
-                "path": str(full_path)
-            }
+            return {"success": False, "error": "old_text not found in file", "path": str(full_path)}
         elif count > 1:
             return {
                 "success": False,
                 "error": f"old_text appears {count} times in file - include more surrounding context to make it unique",
-                "path": str(full_path)
+                "path": str(full_path),
             }
 
         new_content = content.replace(old_text, new_text, 1)
         full_path.write_text(new_content, encoding="utf-8")
 
-        return {
-            "success": True,
-            "path": str(full_path),
-            "action": "edited"
-        }
+        return {"success": True, "path": str(full_path), "action": "edited"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -410,9 +384,9 @@ def run_bash(command: str, timeout: int = 30, output_lines: str = "both") -> dic
         return {
             "success": False,
             "blocked": True,
-            "error": f"BLOCKED: This command is dangerous and cannot be executed.",
+            "error": "BLOCKED: This command is dangerous and cannot be executed.",
             "command": command,
-            "reason": danger_check["explanation"]
+            "reason": danger_check["explanation"],
         }
 
     # Validate/clamp inputs
@@ -421,42 +395,30 @@ def run_bash(command: str, timeout: int = 30, output_lines: str = "both") -> dic
         output_lines = "both"
 
     try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=Path.cwd()
-        )
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout, cwd=Path.cwd())
 
         def truncate_output(text: str, max_lines: int = 50) -> str:
             """Truncate output based on output_lines parameter."""
-            lines = text.split('\n')
+            lines = text.split("\n")
             if len(lines) <= max_lines or output_lines == "all":
                 return text
 
             omitted = len(lines) - max_lines
 
             if output_lines == "first":
-                return '\n'.join(lines[:max_lines]) + f"\n... ({omitted} more lines)"
+                return "\n".join(lines[:max_lines]) + f"\n... ({omitted} more lines)"
             elif output_lines == "last":
-                return f"... ({omitted} lines omitted)\n" + '\n'.join(lines[-max_lines:])
+                return f"... ({omitted} lines omitted)\n" + "\n".join(lines[-max_lines:])
             else:  # "both"
                 half = max_lines // 2
-                first_part = '\n'.join(lines[:half])
-                last_part = '\n'.join(lines[-half:])
+                first_part = "\n".join(lines[:half])
+                last_part = "\n".join(lines[-half:])
                 return first_part + f"\n... ({omitted} lines omitted) ...\n" + last_part
 
         stdout = truncate_output(result.stdout, max_lines=50)
         stderr = truncate_output(result.stderr, max_lines=20)
 
-        return {
-            "success": result.returncode == 0,
-            "exit_code": result.returncode,
-            "stdout": stdout,
-            "stderr": stderr
-        }
+        return {"success": result.returncode == 0, "exit_code": result.returncode, "stdout": stdout, "stderr": stderr}
     except subprocess.TimeoutExpired:
         return {"success": False, "error": f"Command timed out ({timeout}s limit)"}
     except Exception as e:
@@ -493,7 +455,7 @@ def prompt_user(action: str, details: str) -> bool:
 
     try:
         response = input(f"{USER_COLOR}Allow? [y/N]: {RESET}").strip().lower()
-        return response in ('y', 'yes')
+        return response in ("y", "yes")
     except (KeyboardInterrupt, EOFError):
         print()  # Newline after Ctrl+C
         return False
@@ -523,7 +485,7 @@ def check_permission(tool_name: str, args: dict) -> tuple[bool, str | None]:
             return True, None
         path = to_relative_path(args.get("path", "?"))
         content = args.get("content", "")
-        lines = content.count('\n') + 1 if content else 0
+        lines = content.count("\n") + 1 if content else 0
         if not prompt_user("Write file", f"{path} ({lines} lines)"):
             return False, "User declined to write file"
         return True, None
@@ -572,28 +534,31 @@ def execute_tool(name: str, arguments: dict) -> str:
             result = web_search(**arguments)
 
             # Convert WebSearchResponse to dict
-            return json.dumps({
-                "success": True,
-                "results": [
-                    {"title": r.title, "url": r.url, "content": r.content}
-                    for r in result.results
-                ]
-            }, indent=2)
+            return json.dumps(
+                {
+                    "success": True,
+                    "results": [{"title": r.title, "url": r.url, "content": r.content} for r in result.results],
+                },
+                indent=2,
+            )
 
         elif name == "web_fetch":
-            result = web_fetch(**arguments)
+            fetch_result = web_fetch(**arguments)
 
             # Convert WebFetchResponse to dict
-            return json.dumps({
-                "success": True,
-                "title": result.title,
-                "content": result.content[:8000],  # Truncate long content
-                "links": result.links[:20] if result.links else []
-            }, indent=2)
+            return json.dumps(
+                {
+                    "success": True,
+                    "title": fetch_result.title,
+                    "content": (fetch_result.content or "")[:8000],  # Truncate long content
+                    "links": fetch_result.links[:20] if fetch_result.links else [],
+                },
+                indent=2,
+            )
 
         # Regular tools (read_file, list_files, write_file, edit_file, run_bash)
-        result = TOOLS[name](**arguments)
-        return json.dumps(result, indent=2)
+        tool_result = TOOLS[name](**arguments)  # type: ignore[operator]
+        return json.dumps(tool_result, indent=2)
 
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
@@ -604,7 +569,7 @@ def format_tool_call(name: str, args: dict) -> str:
     if name == "write_file":
         path = to_relative_path(args.get("path", "?"))
         content = args.get("content", "")
-        lines = content.count('\n') + 1 if content else 0
+        lines = content.count("\n") + 1 if content else 0
         return f"[Write] {path} ({lines} lines)"
 
     elif name == "edit_file":
@@ -626,7 +591,7 @@ def format_tool_call(name: str, args: dict) -> str:
     elif name == "web_search":
         query = args.get("query", "?")
         max_results = args.get("max_results", 5)
-        return f"[Search] \"{query}\" (max {max_results})"
+        return f'[Search] "{query}" (max {max_results})'
 
     elif name == "web_fetch":
         url = args.get("url", "?")
@@ -639,7 +604,7 @@ def format_tool_call(name: str, args: dict) -> str:
         return f"[{name}] {args}"
 
 
-def format_tool_result(name: str, result_json: str, args: dict = None) -> str:
+def format_tool_result(name: str, result_json: str, args: dict | None = None) -> str:
     """Format a tool result for clean display."""
     try:
         result = json.loads(result_json)
@@ -650,41 +615,41 @@ def format_tool_result(name: str, result_json: str, args: dict = None) -> str:
         return f"Error: {result.get('error', 'Unknown error')}"
 
     if name == "write_file":
-        path = to_relative_path(result.get('path', '?'))
+        path = to_relative_path(result.get("path", "?"))
         output = f"Created {path}"
         # Show first 8 lines as preview with syntax highlighting
         if args and "content" in args:
-            lines = args["content"].split('\n')[:8]
-            preview_code = '\n'.join(lines)
-            if len(args["content"].split('\n')) > 8:
+            lines = args["content"].split("\n")[:8]
+            preview_code = "\n".join(lines)
+            if len(args["content"].split("\n")) > 8:
                 preview_code += "\n..."
             # Apply syntax highlighting
             highlighted = syntax_highlight(preview_code, path)
             # Indent each line
-            preview = '\n'.join(f"    {line}" for line in highlighted.split('\n'))
+            preview = "\n".join(f"    {line}" for line in highlighted.split("\n"))
             output += f"\n{preview}"
         return output
 
     elif name == "edit_file":
-        path = to_relative_path(result.get('path', '?'))
+        path = to_relative_path(result.get("path", "?"))
         output = f"Edited {path}"
         # Show diff if we have old_text and new_text
         if args and "old_text" in args and "new_text" in args:
             diff = format_diff(args["old_text"], args["new_text"])
             # Indent each line
-            diff_indented = '\n'.join(f"    {line}" for line in diff.split('\n'))
+            diff_indented = "\n".join(f"    {line}" for line in diff.split("\n"))
             output += f"\n{diff_indented}"
         return output
 
     elif name == "read_file":
         content = result.get("content", "")
-        lines = content.count('\n') + 1 if content else 0
-        path = to_relative_path(result.get('file_path', '?'))
+        lines = content.count("\n") + 1 if content else 0
+        path = to_relative_path(result.get("file_path", "?"))
         return f"Read {lines} lines from {path}"
 
     elif name == "list_files":
         items = result.get("items", [])
-        path = to_relative_path(result.get('path', '?'))
+        path = to_relative_path(result.get("path", "?"))
         return f"Found {len(items)} items in {path}"
 
     elif name == "run_bash":
@@ -700,16 +665,16 @@ def format_tool_result(name: str, result_json: str, args: dict = None) -> str:
         # Format output with └ prefix like Claude Code
         lines = []
         if stdout:
-            for line in stdout.split('\n'):
+            for line in stdout.split("\n"):
                 lines.append(f"  └ {line}")
         if stderr:
-            for line in stderr.split('\n'):
+            for line in stderr.split("\n"):
                 lines.append(f"  └ {ERROR_COLOR}{line}{RESET}")
 
         if not lines:
-            lines.append(f"  └ (no output)")
+            lines.append("  └ (no output)")
 
-        output = '\n'.join(lines)
+        output = "\n".join(lines)
         status = "success" if exit_code == 0 else f"exit {exit_code}"
         return f"({status})\n{output}"
 
@@ -721,22 +686,18 @@ def format_tool_result(name: str, result_json: str, args: dict = None) -> str:
             url = r.get("url", "?")
             lines.append(f"  {i}. {title}")
             lines.append(f"     {THINKING_COLOR}{url}{RESET}")
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     elif name == "web_fetch":
         title = result.get("title", "?")
         content = result.get("content", "")
         content_len = len(content)
         # Show preview of content
-        preview = content[:200].replace('\n', ' ')
+        preview = content[:200].replace("\n", " ")
         if len(content) > 200:
             preview += "..."
-        lines = [
-            f"Fetched: {title}",
-            f"  Content: {content_len:,} chars",
-            f"  Preview: {preview}"
-        ]
-        return '\n'.join(lines)
+        lines = [f"Fetched: {title}", f"  Content: {content_len:,} chars", f"  Preview: {preview}"]
+        return "\n".join(lines)
 
     else:
         return result_json
@@ -764,7 +725,7 @@ def get_short_path() -> str:
     cwd = str(Path.cwd())
     home = str(Path.home())
     if cwd.startswith(home):
-        return "~" + cwd[len(home):]
+        return "~" + cwd[len(home) :]
     return cwd
 
 
@@ -788,23 +749,13 @@ def print_banner() -> None:
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description='Terminal Coder - A coding agent powered by Ollama Cloud'
+    parser = argparse.ArgumentParser(description="Terminal Coder - A coding agent powered by Ollama Cloud")
+    parser.add_argument("--model", "-m", default=DEFAULT_MODEL, help=f"Model to use (default: {DEFAULT_MODEL})")
+    parser.add_argument(
+        "--accept-edits", action="store_true", help="Auto-approve file writes/edits, still prompt for bash commands"
     )
     parser.add_argument(
-        '--model', '-m',
-        default=DEFAULT_MODEL,
-        help=f'Model to use (default: {DEFAULT_MODEL})'
-    )
-    parser.add_argument(
-        '--accept-edits',
-        action='store_true',
-        help='Auto-approve file writes/edits, still prompt for bash commands'
-    )
-    parser.add_argument(
-        '--yolo',
-        action='store_true',
-        help='Bypass all permission prompts (dangerous - full autonomous mode)'
+        "--yolo", action="store_true", help="Bypass all permission prompts (dangerous - full autonomous mode)"
     )
     return parser.parse_args()
 
@@ -836,7 +787,7 @@ def run_agent() -> None:
         print(f"{TOOL_COLOR}  Accept-edits mode: file writes auto-approved{RESET}")
         print()
 
-    messages = []
+    messages: list[dict[str, Any]] = []
 
     # System message to set context (with current date and working directory)
     current_date = datetime.now().strftime("%A, %B %d, %Y")
@@ -949,10 +900,10 @@ OUTPUT FORMATTING:
                 parts = user_input.split(maxsplit=1)
                 if len(parts) < 2:
                     print(f"{ASSISTANT_COLOR}Current model: {MODEL}{RESET}")
-                    print(f"Usage: /model <model-name>")
-                    print(f"Examples: /model llama3:8b (local)")
-                    print(f"          /model deepseek-v3.1:671b-cloud")
-                    print(f"          /model minimax-m2.1:cloud\n")
+                    print("Usage: /model <model-name>")
+                    print("Examples: /model llama3:8b (local)")
+                    print("          /model deepseek-v3.1:671b-cloud")
+                    print("          /model minimax-m2.1:cloud\n")
                 else:
                     new_model = parts[1].strip()
                     print(f"{THINKING_COLOR}Pulling model...{RESET}", end=" ", flush=True)
@@ -982,7 +933,7 @@ OUTPUT FORMATTING:
 
             else:
                 print(f"{ERROR_COLOR}Unknown command: {cmd}{RESET}")
-                print(f"Type /help for available commands.\n")
+                print("Type /help for available commands.\n")
                 continue
 
         if user_input.lower() in ("quit", "exit"):
@@ -1002,8 +953,8 @@ OUTPUT FORMATTING:
                 response: ChatResponse = chat(
                     model=MODEL,
                     messages=[{"role": "system", "content": system_msg}] + messages,
-                    tools=TOOL_FUNCTIONS,
-                    think=True
+                    tools=TOOL_FUNCTIONS,  # type: ignore[arg-type]
+                    think=True,
                 )
             except Exception as e:
                 spinner.stop()
@@ -1017,7 +968,7 @@ OUTPUT FORMATTING:
             tokens.add(response)
 
             # Add assistant response to history
-            messages.append(response.message)
+            messages.append(response.message)  # type: ignore[arg-type]
 
             # Show thinking if present
             print_thinking(response.message.thinking)
@@ -1029,20 +980,16 @@ OUTPUT FORMATTING:
                     tool_args = call.function.arguments
 
                     # Display clean tool call
-                    print(f"\n{TOOL_COLOR}{format_tool_call(tool_name, tool_args)}{RESET}")
+                    print(f"\n{TOOL_COLOR}{format_tool_call(tool_name, dict(tool_args))}{RESET}")
 
                     # Execute the tool
-                    result = execute_tool(tool_name, tool_args)
+                    result = execute_tool(tool_name, dict(tool_args))
 
                     # Display clean result
-                    print(f"{TOOL_COLOR}  -> {format_tool_result(tool_name, result, tool_args)}{RESET}")
+                    print(f"{TOOL_COLOR}  -> {format_tool_result(tool_name, result, dict(tool_args))}{RESET}")
 
                     # Add tool result to messages
-                    messages.append({
-                        "role": "tool",
-                        "tool_name": tool_name,
-                        "content": result
-                    })
+                    messages.append({"role": "tool", "tool_name": tool_name, "content": result})
             else:
                 # No tool calls - print response and break inner loop
                 if response.message.content:
