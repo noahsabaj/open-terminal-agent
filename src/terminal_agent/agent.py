@@ -893,7 +893,10 @@ OUTPUT FORMATTING:
 
     while True:
         try:
-            user_input = input(f"\001{USER_COLOR}\002You:\001{RESET}\002 ").strip()
+            # Print prompt separately to avoid readline length calculation issues
+            sys.stdout.write(f"{USER_COLOR}You:{RESET} ")
+            sys.stdout.flush()
+            user_input = input().strip()
         except (KeyboardInterrupt, EOFError):
             print(f"\n{ASSISTANT_COLOR}Goodbye!{RESET}")
             break
