@@ -26,36 +26,45 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
     OS="macos"
 fi
 
-# Check for podman
-if ! command -v podman &> /dev/null; then
-    echo -e "${RED}Error: Podman is required but not installed.${NC}"
+# Check for Python 3.10+
+if ! command -v python3 &> /dev/null; then
+    echo -e "${RED}Error: Python 3 is required but not installed.${NC}"
     echo ""
-    echo "Install Podman first:"
-    echo "  Ubuntu/Debian: sudo apt install podman"
-    echo "  Fedora:        sudo dnf install podman"
-    echo "  Arch:          sudo pacman -S podman"
-    echo "  macOS:         brew install podman"
+    echo "Install Python 3.10+ first:"
+    echo "  Ubuntu/Debian: sudo apt install python3 python3-pip"
+    echo "  Fedora:        sudo dnf install python3 python3-pip"
+    echo "  Arch:          sudo pacman -S python python-pip"
+    echo "  macOS:         brew install python3"
     echo ""
     exit 1
 fi
 
-echo -e "${GREEN}✓${NC} Podman found"
+# Check Python version
+PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
+PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
 
-# macOS: Check if podman machine is running
-if [[ "$OS" == "macos" ]]; then
-    if ! podman machine inspect &> /dev/null; then
-        echo -e "${YELLOW}!${NC} Podman machine not initialized"
-        echo -e "  Initializing podman machine..."
-        podman machine init
-    fi
-
-    if ! podman machine inspect --format '{{.State}}' 2>/dev/null | grep -q "running"; then
-        echo -e "${YELLOW}!${NC} Starting podman machine..."
-        podman machine start
-    fi
-
-    echo -e "${GREEN}✓${NC} Podman machine running"
+if [[ "$PYTHON_MAJOR" -lt 3 ]] || [[ "$PYTHON_MAJOR" -eq 3 && "$PYTHON_MINOR" -lt 10 ]]; then
+    echo -e "${RED}Error: Python 3.10+ is required (found $PYTHON_VERSION)${NC}"
+    echo ""
+    echo "Please upgrade Python to version 3.10 or later."
+    exit 1
 fi
+
+echo -e "${GREEN}✓${NC} Python $PYTHON_VERSION found"
+
+# Check for pip
+if ! command -v pip3 &> /dev/null && ! python3 -m pip --version &> /dev/null; then
+    echo -e "${RED}Error: pip is required but not installed.${NC}"
+    echo ""
+    echo "Install pip:"
+    echo "  Ubuntu/Debian: sudo apt install python3-pip"
+    echo "  macOS:         python3 -m ensurepip"
+    echo ""
+    exit 1
+fi
+
+echo -e "${GREEN}✓${NC} pip found"
 
 # Check for ollama
 if ! command -v ollama &> /dev/null; then
@@ -67,7 +76,7 @@ if ! command -v ollama &> /dev/null; then
         echo -e "${RED}!${NC} Ollama not found"
         echo ""
         echo "  Download Ollama from: ${CYAN}https://ollama.com/download${NC}"
-        echo "  Install the .dmg, then run this script again."
+        echo "  Install it, then run this script again."
         echo ""
         exit 1
     fi
@@ -85,91 +94,28 @@ echo ""
 read -p "Press Enter to continue (or Ctrl+C to sign in first)..."
 echo ""
 
-# Create directories
-INSTALL_DIR="$HOME/.terminal-agent"
-BIN_DIR="$HOME/.local/bin"
+# Install terminal-agent via pip
+echo -e "${YELLOW}↓${NC} Installing open-terminal-agent..."
+pip3 install --user open-terminal-agent
 
-mkdir -p "$INSTALL_DIR"
-mkdir -p "$BIN_DIR"
+echo -e "${GREEN}✓${NC} Installed terminal-agent"
 
-echo -e "${GREEN}✓${NC} Created directories"
+# Check if ~/.local/bin is in PATH
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    SHELL_RC=""
+    if [[ "$SHELL" == *"zsh"* ]]; then
+        SHELL_RC="$HOME/.zshrc"
+    elif [[ "$SHELL" == *"bash"* ]]; then
+        SHELL_RC="$HOME/.bashrc"
+    fi
 
-# Download files from GitHub
-REPO_URL="https://raw.githubusercontent.com/noahsabaj/terminal-agent/main"
-
-echo -e "${YELLOW}↓${NC} Downloading agent.py..."
-curl -fsSL "$REPO_URL/agent.py" -o "$INSTALL_DIR/agent.py"
-
-echo -e "${YELLOW}↓${NC} Downloading Containerfile..."
-curl -fsSL "$REPO_URL/Containerfile" -o "$INSTALL_DIR/Containerfile"
-
-echo -e "${YELLOW}↓${NC} Downloading requirements.txt..."
-curl -fsSL "$REPO_URL/requirements.txt" -o "$INSTALL_DIR/requirements.txt"
-
-echo -e "${GREEN}✓${NC} Downloaded all files"
-
-# Remove old container image so it rebuilds with new code
-if podman image exists "terminal-agent" 2>/dev/null; then
-    podman rmi -f "terminal-agent" >/dev/null 2>&1
-    echo -e "${GREEN}✓${NC} Cleared old container image"
-fi
-
-# Create the agent wrapper script
-cat > "$BIN_DIR/agent" << 'WRAPPER'
-#!/bin/bash
-# Terminal Agent - Sandboxed in Podman (transparent to user)
-
-set -e
-
-IMAGE_NAME="terminal-agent"
-AGENT_DIR="$HOME/.terminal-agent"
-
-# Build image if it doesn't exist (first run only)
-if ! podman image exists "$IMAGE_NAME" 2>/dev/null; then
-    echo "Setting up Terminal Agent (first run only)..."
-    podman build -t "$IMAGE_NAME" -f "$AGENT_DIR/Containerfile" "$AGENT_DIR" 2>&1 | while read line; do
-        echo -ne "\r\033[K  $line"
-    done
-    echo -e "\r\033[K\033[32m✓\033[0m Container ready"
-    echo ""
-fi
-
-# Run sandboxed (--network=host allows access to Ollama on host)
-# Mount at same path so container sees real directory name
-# Mount ~/.ollama for authentication with Ollama cloud services
-exec podman run --rm -it \
-    -v "$(pwd):$(pwd):Z" \
-    -v "$HOME/.ollama:$HOME/.ollama:ro" \
-    --workdir "$(pwd)" \
-    --tmpfs /tmp \
-    --security-opt=no-new-privileges \
-    --hostname terminal-agent \
-    --network=host \
-    -e TERM="$TERM" \
-    -e HOME="$HOME" \
-    "$IMAGE_NAME" "$@"
-WRAPPER
-
-chmod +x "$BIN_DIR/agent"
-
-echo -e "${GREEN}✓${NC} Installed agent command"
-
-# Add to PATH if needed
-SHELL_RC=""
-if [[ "$SHELL" == *"zsh"* ]]; then
-    SHELL_RC="$HOME/.zshrc"
-elif [[ "$SHELL" == *"bash"* ]]; then
-    SHELL_RC="$HOME/.bashrc"
-fi
-
-if [[ -n "$SHELL_RC" ]] && ! grep -q '.local/bin' "$SHELL_RC" 2>/dev/null; then
-    echo '' >> "$SHELL_RC"
-    echo '# Terminal Agent' >> "$SHELL_RC"
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
-    echo -e "${GREEN}✓${NC} Added to PATH in $SHELL_RC"
-    NEED_SOURCE=true
-else
-    echo -e "${GREEN}✓${NC} PATH already configured"
+    if [[ -n "$SHELL_RC" ]] && ! grep -q '.local/bin' "$SHELL_RC" 2>/dev/null; then
+        echo '' >> "$SHELL_RC"
+        echo '# Terminal Agent' >> "$SHELL_RC"
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
+        echo -e "${GREEN}✓${NC} Added to PATH in $SHELL_RC"
+        NEED_SOURCE=true
+    fi
 fi
 
 echo ""
@@ -177,18 +123,19 @@ echo -e "${GREEN}Installation complete!${NC}"
 echo ""
 
 # Check if we need to source or if it's already in PATH
-if command -v agent &> /dev/null; then
-    echo -e "Run ${CYAN}agent${NC} to start."
+if command -v terminal-agent &> /dev/null; then
+    echo -e "Run ${CYAN}terminal-agent${NC} to start."
 elif [[ "$NEED_SOURCE" == true ]]; then
-    echo -e "Run ${CYAN}source $SHELL_RC${NC} then ${CYAN}agent${NC} to start."
+    echo -e "Run ${CYAN}source $SHELL_RC${NC} then ${CYAN}terminal-agent${NC} to start."
     echo -e "  (or open a new terminal)"
 else
-    echo -e "Run ${CYAN}$BIN_DIR/agent${NC} to start."
+    echo -e "Run ${CYAN}~/.local/bin/terminal-agent${NC} to start."
     echo -e "  (or open a new terminal for PATH to update)"
 fi
 
 echo ""
 echo -e "Options:"
-echo -e "  ${CYAN}agent${NC}          Start normally"
-echo -e "  ${CYAN}agent --yolo${NC}   Autonomous mode (no prompts)"
+echo -e "  ${CYAN}terminal-agent${NC}                Start normally (prompts for permission)"
+echo -e "  ${CYAN}terminal-agent --accept-edits${NC} Auto-approve file edits"
+echo -e "  ${CYAN}terminal-agent --yolo${NC}         Full autonomous mode (no prompts)"
 echo ""

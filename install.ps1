@@ -3,16 +3,6 @@
 
 $ErrorActionPreference = "Stop"
 
-# Colors
-function Write-ColorOutput($ForegroundColor) {
-    $fc = $host.UI.RawUI.ForegroundColor
-    $host.UI.RawUI.ForegroundColor = $ForegroundColor
-    if ($args) {
-        Write-Output $args
-    }
-    $host.UI.RawUI.ForegroundColor = $fc
-}
-
 Write-Host ""
 Write-Host "  ╭─────╮" -ForegroundColor Cyan
 Write-Host "  │ ◠ ◠ │   Terminal Agent Installer" -ForegroundColor Cyan
@@ -20,33 +10,52 @@ Write-Host "  │  ▽  │" -ForegroundColor Cyan
 Write-Host "  ╰─────╯" -ForegroundColor Cyan
 Write-Host ""
 
-# Check for Podman
-$podmanPath = Get-Command podman -ErrorAction SilentlyContinue
-if (-not $podmanPath) {
-    Write-Host "✗ Podman not found" -ForegroundColor Red
+# Check for Python
+$pythonPath = Get-Command python -ErrorAction SilentlyContinue
+if (-not $pythonPath) {
+    $pythonPath = Get-Command python3 -ErrorAction SilentlyContinue
+}
+
+if (-not $pythonPath) {
+    Write-Host "✗ Python not found" -ForegroundColor Red
     Write-Host ""
-    Write-Host "  Install Podman Desktop from: " -NoNewline
-    Write-Host "https://podman-desktop.io/downloads" -ForegroundColor Cyan
-    Write-Host "  After installing, restart your terminal and run this script again."
+    Write-Host "  Install Python 3.10+ from: " -NoNewline
+    Write-Host "https://python.org/downloads" -ForegroundColor Cyan
+    Write-Host "  Make sure to check 'Add Python to PATH' during installation."
     Write-Host ""
     exit 1
 }
-Write-Host "✓ Podman found" -ForegroundColor Green
 
-# Check if Podman machine is running
-$machineStatus = podman machine inspect 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "! Podman machine not initialized" -ForegroundColor Yellow
-    Write-Host "  Initializing podman machine..."
-    podman machine init
+# Check Python version
+$pythonVersion = & $pythonPath.Source -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+$versionParts = $pythonVersion -split '\.'
+$major = [int]$versionParts[0]
+$minor = [int]$versionParts[1]
+
+if ($major -lt 3 -or ($major -eq 3 -and $minor -lt 10)) {
+    Write-Host "✗ Python 3.10+ is required (found $pythonVersion)" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Please upgrade Python to version 3.10 or later."
+    exit 1
 }
 
-$machineState = podman machine inspect --format "{{.State}}" 2>&1
-if ($machineState -ne "running") {
-    Write-Host "! Starting podman machine..." -ForegroundColor Yellow
-    podman machine start
+Write-Host "✓ Python $pythonVersion found" -ForegroundColor Green
+
+# Check for pip
+$pipWorks = $false
+try {
+    & $pythonPath.Source -m pip --version 2>$null | Out-Null
+    $pipWorks = $true
+} catch {}
+
+if (-not $pipWorks) {
+    Write-Host "✗ pip not found" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Try running: python -m ensurepip"
+    exit 1
 }
-Write-Host "✓ Podman machine running" -ForegroundColor Green
+
+Write-Host "✓ pip found" -ForegroundColor Green
 
 # Check for Ollama
 $ollamaPath = Get-Command ollama -ErrorAction SilentlyContinue
@@ -71,101 +80,54 @@ Write-Host ""
 Read-Host "Press Enter to continue (or Ctrl+C to sign in first)"
 Write-Host ""
 
-# Create directories
-$installDir = "$env:USERPROFILE\.terminal-agent"
-$binDir = "$env:USERPROFILE\.local\bin"
+# Install terminal-agent via pip
+Write-Host "↓ Installing open-terminal-agent..." -ForegroundColor Yellow
+& $pythonPath.Source -m pip install --user open-terminal-agent
 
-if (-not (Test-Path $installDir)) {
-    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-}
-if (-not (Test-Path $binDir)) {
-    New-Item -ItemType Directory -Path $binDir -Force | Out-Null
-}
-Write-Host "✓ Created directories" -ForegroundColor Green
+Write-Host "✓ Installed terminal-agent" -ForegroundColor Green
 
-# Download files from GitHub
-$repoUrl = "https://raw.githubusercontent.com/noahsabaj/terminal-agent/main"
-
-Write-Host "↓ Downloading agent.py..." -ForegroundColor Yellow
-Invoke-WebRequest -Uri "$repoUrl/agent.py" -OutFile "$installDir\agent.py"
-
-Write-Host "↓ Downloading Containerfile..." -ForegroundColor Yellow
-Invoke-WebRequest -Uri "$repoUrl/Containerfile" -OutFile "$installDir\Containerfile"
-
-Write-Host "↓ Downloading requirements.txt..." -ForegroundColor Yellow
-Invoke-WebRequest -Uri "$repoUrl/requirements.txt" -OutFile "$installDir\requirements.txt"
-
-Write-Host "✓ Downloaded all files" -ForegroundColor Green
-
-# Remove old container image so it rebuilds with new code
-$imageExists = podman image exists "terminal-agent" 2>$null
-if ($LASTEXITCODE -eq 0) {
-    podman rmi -f "terminal-agent" 2>$null | Out-Null
-    Write-Host "✓ Cleared old container image" -ForegroundColor Green
-}
-
-# Create the agent wrapper script (batch file for Windows)
-$agentBat = @'
-@echo off
-setlocal
-
-set IMAGE_NAME=terminal-agent
-set AGENT_DIR=%USERPROFILE%\.terminal-agent
-
-:: Check if image exists, build if not
-podman image exists %IMAGE_NAME% >nul 2>&1
-if %ERRORLEVEL% neq 0 (
-    echo Setting up Terminal Agent (first run only^)...
-    podman build -t %IMAGE_NAME% -f "%AGENT_DIR%\Containerfile" "%AGENT_DIR%"
-    if %ERRORLEVEL% neq 0 (
-        echo.
-        echo Build failed. Please check the error above.
-        exit /b 1
-    )
-    echo.
-)
-
-:: Run sandboxed (--network=host allows access to Ollama on host)
-:: Mount at same path so container sees real directory name
-:: Mount .ollama for authentication with Ollama cloud services
-podman run --rm -it ^
-    -v "%CD%:%CD%" ^
-    -v "%USERPROFILE%\.ollama:%USERPROFILE%\.ollama:ro" ^
-    --workdir "%CD%" ^
-    --tmpfs /tmp ^
-    --security-opt=no-new-privileges ^
-    --hostname terminal-agent ^
-    --network=host ^
-    -e TERM=xterm-256color ^
-    -e HOME=%USERPROFILE% ^
-    %IMAGE_NAME% %*
-'@
-
-$agentBat | Out-File -FilePath "$binDir\agent.bat" -Encoding ASCII
-Write-Host "✓ Installed agent command" -ForegroundColor Green
-
-# Add to PATH if needed
+# Check if Scripts directory is in PATH
+$scriptsDir = "$env:USERPROFILE\AppData\Local\Programs\Python\Python$major$minor\Scripts"
+$altScriptsDir = "$env:USERPROFILE\.local\bin"
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($userPath -notlike "*$binDir*") {
-    [Environment]::SetEnvironmentVariable("Path", "$userPath;$binDir", "User")
-    Write-Host "✓ Added to PATH" -ForegroundColor Green
-    $env:Path = "$env:Path;$binDir"
-} else {
-    Write-Host "✓ PATH already configured" -ForegroundColor Green
+
+$needPathUpdate = $false
+if ($userPath -notlike "*Scripts*" -and $userPath -notlike "*\.local\bin*") {
+    # Try to find the actual Scripts directory
+    $possiblePaths = @(
+        "$env:USERPROFILE\AppData\Local\Programs\Python\Python$major$minor\Scripts",
+        "$env:USERPROFILE\AppData\Roaming\Python\Python$major$minor\Scripts",
+        "$env:LOCALAPPDATA\Programs\Python\Python$major$minor\Scripts"
+    )
+
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            [Environment]::SetEnvironmentVariable("Path", "$userPath;$path", "User")
+            $env:Path = "$env:Path;$path"
+            Write-Host "✓ Added to PATH: $path" -ForegroundColor Green
+            $needPathUpdate = $true
+            break
+        }
+    }
 }
 
 Write-Host ""
 Write-Host "Installation complete!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Run " -NoNewline
-Write-Host "agent" -ForegroundColor Cyan -NoNewline
+Write-Host "terminal-agent" -ForegroundColor Cyan -NoNewline
 Write-Host " to start."
 Write-Host ""
 Write-Host "Options:"
-Write-Host "  agent" -ForegroundColor Cyan -NoNewline
-Write-Host "          Start normally"
-Write-Host "  agent --yolo" -ForegroundColor Cyan -NoNewline
-Write-Host "   Autonomous mode (no prompts)"
+Write-Host "  terminal-agent" -ForegroundColor Cyan -NoNewline
+Write-Host "                Start normally (prompts for permission)"
+Write-Host "  terminal-agent --accept-edits" -ForegroundColor Cyan -NoNewline
+Write-Host " Auto-approve file edits"
+Write-Host "  terminal-agent --yolo" -ForegroundColor Cyan -NoNewline
+Write-Host "         Full autonomous mode (no prompts)"
 Write-Host ""
-Write-Host "Note: You may need to restart your terminal for PATH changes to take effect."
-Write-Host ""
+
+if ($needPathUpdate) {
+    Write-Host "Note: You may need to restart your terminal for PATH changes to take effect." -ForegroundColor Yellow
+    Write-Host ""
+}

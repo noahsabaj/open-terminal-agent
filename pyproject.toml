@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "open-terminal-agent"
+version = "0.2.0"
+description = "A coding agent for the terminal, powered by Ollama Cloud"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    {name = "Noah Sabaj"}
+]
+keywords = ["ai", "coding", "agent", "ollama", "terminal", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "ollama",
+    "pygments",
+    "rich",
+]
+
+[project.scripts]
+terminal-agent = "terminal_agent:run_agent"
+
+[project.urls]
+Homepage = "https://github.com/noahsabaj/terminal-agent"
+Repository = "https://github.com/noahsabaj/terminal-agent"
+Issues = "https://github.com/noahsabaj/terminal-agent/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/terminal_agent"]

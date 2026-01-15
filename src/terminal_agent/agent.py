@@ -32,24 +32,26 @@ ERROR_COLOR = "\033[91m"      # Red
 RESET = "\033[0m"
 
 # =============================================================================
+# SECURITY MODEL
+# =============================================================================
+# PRIMARY SECURITY: Permission prompts before destructive operations.
+# The agent asks for user confirmation before writing files or running commands.
+# This is the same model used by Claude Code and similar tools.
+#
+# SECONDARY: Dangerous command blocklist (below) catches obvious accidents like
+# "rm -rf /" before they reach the permission prompt. This is NOT a security
+# boundary - these patterns are trivially bypassed. It's a seatbelt warning
+# light, not an airbag.
+#
+# OPTIONAL: Container sandbox (--sandbox flag) for additional isolation.
+# =============================================================================
+
+# =============================================================================
 # DANGEROUS COMMAND BLOCKLIST
 # =============================================================================
 # PURPOSE: Catch obvious/accidental dangerous commands before execution.
-#
-# IMPORTANT: This is NOT a security boundary. These regex patterns are trivially
-# bypassed via variable expansion, command substitution, piping, encoding, etc.
-# Examples that bypass this blocklist:
-#   - rm -rf $(echo /)
-#   - cmd="/"; rm -rf $cmd
-#   - echo "rm -rf /" | sh
-#
-# THE REAL SECURITY: Container isolation (Podman sandbox) is the actual security
-# mechanism. Even if a dangerous command bypasses this blocklist, damage is
-# contained to the sandboxed environment.
-#
-# This blocklist exists to catch accidents (typos, LLM hallucinations, copy-paste
-# errors), not to prevent intentional attacks. Think of it as a seatbelt warning
-# light, not an airbag.
+# These patterns catch typos, LLM hallucinations, and copy-paste errors.
+# NOT a security boundary - trivially bypassed via variable expansion, etc.
 # =============================================================================
 DANGEROUS_PATTERNS = {
     # System destruction
@@ -92,8 +94,16 @@ DANGEROUS_PATTERNS = {
 DEFAULT_MODEL = "minimax-m2.1:cloud"
 MODEL = DEFAULT_MODEL
 
-# Permission mode (--yolo bypasses all confirmations)
-YOLO_MODE = False
+
+# Permission modes
+class PermissionMode:
+    """Permission levels for tool execution."""
+    DEFAULT = "default"        # Prompt for writes and bash
+    ACCEPT_EDITS = "accept-edits"  # Auto-approve edits, prompt for bash
+    YOLO = "yolo"              # Auto-approve everything
+
+
+PERMISSION_MODE = PermissionMode.DEFAULT
 
 # Rich console for pretty output
 console = Console()
@@ -452,10 +462,89 @@ TOOLS = {
 TOOL_FUNCTIONS = [read_file, list_files, write_file, edit_file, run_bash, web_search, web_fetch]
 
 
+def prompt_user(action: str, details: str) -> bool:
+    """Prompt user for permission before a destructive operation.
+
+    Args:
+        action: Short description of the action (e.g., "Write file")
+        details: Details about the action (e.g., file path, command)
+
+    Returns:
+        True if user approves, False otherwise
+    """
+    print(f"\n{TOOL_COLOR}{action}{RESET}")
+    print(f"  {details}")
+
+    try:
+        response = input(f"{USER_COLOR}Allow? [y/N]: {RESET}").strip().lower()
+        return response in ('y', 'yes')
+    except (KeyboardInterrupt, EOFError):
+        print()  # Newline after Ctrl+C
+        return False
+
+
+def check_permission(tool_name: str, args: dict) -> tuple[bool, str | None]:
+    """Check if a tool execution is permitted based on current permission mode.
+
+    Args:
+        tool_name: Name of the tool to execute
+        args: Arguments for the tool
+
+    Returns:
+        Tuple of (is_permitted, error_message). error_message is None if permitted.
+    """
+    # Read operations always allowed
+    if tool_name in ("read_file", "list_files", "web_search", "web_fetch"):
+        return True, None
+
+    # YOLO mode: everything allowed
+    if PERMISSION_MODE == PermissionMode.YOLO:
+        return True, None
+
+    # Write/edit operations
+    if tool_name == "write_file":
+        if PERMISSION_MODE == PermissionMode.ACCEPT_EDITS:
+            return True, None
+        path = to_relative_path(args.get("path", "?"))
+        content = args.get("content", "")
+        lines = content.count('\n') + 1 if content else 0
+        if not prompt_user("Write file", f"{path} ({lines} lines)"):
+            return False, "User declined to write file"
+        return True, None
+
+    if tool_name == "edit_file":
+        if PERMISSION_MODE == PermissionMode.ACCEPT_EDITS:
+            return True, None
+        path = to_relative_path(args.get("path", "?"))
+        old_text = args.get("old_text", "")
+        new_text = args.get("new_text", "")
+        # Show a brief diff preview
+        old_preview = old_text[:50] + "..." if len(old_text) > 50 else old_text
+        new_preview = new_text[:50] + "..." if len(new_text) > 50 else new_text
+        details = f"{path}\n  - {repr(old_preview)}\n  + {repr(new_preview)}"
+        if not prompt_user("Edit file", details):
+            return False, "User declined to edit file"
+        return True, None
+
+    # Bash commands - always prompt unless YOLO
+    if tool_name == "run_bash":
+        command = args.get("command", "?")
+        if not prompt_user("Run command", command):
+            return False, "User declined to run command"
+        return True, None
+
+    return True, None
+
+
 def execute_tool(name: str, arguments: dict) -> str:
     """Execute a tool by name and return JSON result."""
     if name not in TOOLS:
         return json.dumps({"success": False, "error": f"Unknown tool: {name}"})
+
+    # Check permission before executing
+    permitted, error = check_permission(name, arguments)
+    if not permitted:
+        return json.dumps({"success": False, "error": error})
 
     try:
         # Handle Ollama web tools (they return special response objects)
@@ -648,7 +737,7 @@ def print_thinking(thinking: str | None):
             print(f"{THINKING_COLOR}{thinking}{RESET}")
 
 
-VERSION = "0.1"
+VERSION = "0.2.0"
 
 
 def get_short_path() -> str:
@@ -689,6 +778,11 @@ def parse_args() -> argparse.Namespace:
         help=f'Model to use (default: {DEFAULT_MODEL})'
     )
     parser.add_argument(
+        '--accept-edits',
+        action='store_true',
+        help='Auto-approve file writes/edits, still prompt for bash commands'
+    )
+    parser.add_argument(
         '--yolo',
         action='store_true',
         help='Bypass all permission prompts (dangerous - full autonomous mode)'
@@ -698,19 +792,29 @@ def parse_args() -> argparse.Namespace:
 
 def run_agent() -> None:
     """Main agent loop."""
-    global MODEL, YOLO_MODE
+    global MODEL, PERMISSION_MODE
 
     # Parse command line arguments
     args = parse_args()
     MODEL = args.model
-    YOLO_MODE = args.yolo
+
+    # Set permission mode (yolo takes precedence over accept-edits)
+    if args.yolo:
+        PERMISSION_MODE = PermissionMode.YOLO
+    elif args.accept_edits:
+        PERMISSION_MODE = PermissionMode.ACCEPT_EDITS
+    else:
+        PERMISSION_MODE = PermissionMode.DEFAULT
 
     print_banner()
 
-    # Warn if in yolo mode
-    if YOLO_MODE:
+    # Warn about permission mode
+    if PERMISSION_MODE == PermissionMode.YOLO:
         print(f"{ERROR_COLOR}  !! YOLO MODE - All permissions bypassed !!{RESET}")
         print(f"{ERROR_COLOR}  !! The agent will act without asking !!{RESET}")
+        print()
+    elif PERMISSION_MODE == PermissionMode.ACCEPT_EDITS:
+        print(f"{TOOL_COLOR}  Accept-edits mode: file writes auto-approved{RESET}")
         print()
 
     messages = []
@@ -783,15 +887,22 @@ OUTPUT FORMATTING:
             cmd = user_input.lower().split()[0]
 
             if cmd == "/help":
+                mode_display = {
+                    PermissionMode.DEFAULT: "default (prompts for writes & bash)",
+                    PermissionMode.ACCEPT_EDITS: "accept-edits (auto-approve edits)",
+                    PermissionMode.YOLO: "yolo (no prompts)",
+                }
                 print(f"""
 {ASSISTANT_COLOR}Available commands:{RESET}
   /help            Show this help message
+  /mode            Cycle permission mode (default → accept-edits → yolo)
   /model <name>    Switch to a different model
   /clear           Clear conversation history
   /tokens          Show token usage
   /quit            Exit the agent
 
 {ASSISTANT_COLOR}Current model:{RESET} {MODEL}
+{ASSISTANT_COLOR}Permission mode:{RESET} {mode_display[PERMISSION_MODE]}
 
 {ASSISTANT_COLOR}Available tools:{RESET}
   read_file, list_files, write_file, edit_file, run_bash
@@ -799,13 +910,27 @@ OUTPUT FORMATTING:
 """)
                 continue
 
+            elif cmd == "/mode":
+                # Cycle through permission modes
+                if PERMISSION_MODE == PermissionMode.DEFAULT:
+                    PERMISSION_MODE = PermissionMode.ACCEPT_EDITS
+                    print(f"{TOOL_COLOR}Permission mode: accept-edits (auto-approve file edits){RESET}\n")
+                elif PERMISSION_MODE == PermissionMode.ACCEPT_EDITS:
+                    PERMISSION_MODE = PermissionMode.YOLO
+                    print(f"{ERROR_COLOR}Permission mode: yolo (all permissions bypassed!){RESET}\n")
+                else:
+                    PERMISSION_MODE = PermissionMode.DEFAULT
+                    print(f"{ASSISTANT_COLOR}Permission mode: default (prompts for writes & bash){RESET}\n")
+                continue
+
             elif cmd == "/model":
                 parts = user_input.split(maxsplit=1)
                 if len(parts) < 2:
                     print(f"{ASSISTANT_COLOR}Current model: {MODEL}{RESET}")
                     print(f"Usage: /model <model-name>")
-                    print(f"Examples: /model deepseek-v3.1:671b-cloud")
-                    print(f"          /model glm4.7:cloud\n")
+                    print(f"Examples: /model llama3:8b (local)")
+                    print(f"          /model deepseek-v3.1:671b-cloud")
+                    print(f"          /model minimax-m2.1:cloud\n")
                 else:
                     MODEL = parts[1].strip()
                     print(f"{ASSISTANT_COLOR}Switched to model: {MODEL}{RESET}\n")

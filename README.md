@@ -2,14 +2,17 @@
 
 A coding agent for the terminal, powered by Ollama Cloud.
 
-**Always runs sandboxed in Podman for safety.**
-
-![Terminal Agent](https://img.shields.io/badge/version-0.1-green)
-![Sandboxed](https://img.shields.io/badge/sandboxed-always-blue)
+![Terminal Agent](https://img.shields.io/badge/version-0.2-green)
+![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue)
 
 ## Install
 
-**macOS / Linux:**
+**pip (recommended):**
+```bash
+pip install open-terminal-agent
+```
+
+**macOS / Linux (one-liner):**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/noahsabaj/terminal-agent/main/install.sh | bash
 ```
@@ -19,29 +22,28 @@ curl -fsSL https://raw.githubusercontent.com/noahsabaj/terminal-agent/main/insta
 irm https://raw.githubusercontent.com/noahsabaj/terminal-agent/main/install.ps1 | iex
 ```
 
-The installer handles everything:
-- Installs [Ollama](https://ollama.com) automatically (Linux) or prompts to download (macOS/Windows)
-- Sets up Podman machine automatically
-- Prompts you to run `ollama signin` for cloud model access
+### Requirements
 
-Requirements:
-- [Podman](https://podman.io/docs/installation) (Linux) or [Podman Desktop](https://podman-desktop.io/downloads) (macOS/Windows)
+- Python 3.10+
+- [Ollama](https://ollama.com) - works with both local and cloud models
+  - **Local models**: `ollama pull llama3:8b` then `terminal-agent -m llama3:8b`
+  - **Cloud models**: `ollama signin` for access to cloud models (default)
 
 ## Usage
 
 ```bash
-agent              # Start the agent
-agent --yolo       # Autonomous mode (no permission prompts)
+terminal-agent                # Start normally (prompts for permission)
+terminal-agent --accept-edits # Auto-approve file edits, prompt for bash
+terminal-agent --yolo         # Full autonomous mode (no prompts)
 ```
 
 ## Features
 
 - **7 Tools**: read_file, list_files, write_file, edit_file, run_bash, web_search, web_fetch
-- **Always Sandboxed**: Runs in Podman container - Ctrl+C kills everything safely
+- **Permission Prompts**: Asks before writing files or running commands
 - **Pretty Output**: Syntax highlighting, markdown tables with box-drawing characters
 - **Smart Editing**: Requires unique text matches to prevent accidental edits
 - **Dynamic Bash**: Configurable timeout and output truncation
-- **Security**: Dangerous command blocklist that cannot be bypassed
 
 ## Commands
 
@@ -50,7 +52,8 @@ Inside the agent:
 | Command | Description |
 |---------|-------------|
 | `/help` | Show available commands |
-| `/model <name>` | Switch model |
+| `/mode` | Cycle permission mode (default → accept-edits → yolo) |
+| `/model <name>` | Switch model (local or cloud) |
 | `/clear` | Clear conversation history |
 | `/tokens` | Show token usage |
 | `/quit` | Exit |
@@ -69,15 +72,22 @@ Inside the agent:
 
 ## Security
 
-- **Always sandboxed** - Runs in Podman, can only access current directory
-- **Dangerous commands blocked** - `rm -rf /`, fork bombs, etc. blocked even in yolo mode
-- **Ctrl+C = full stop** - Kills container and all processes instantly
+- **Permission prompts** - Asks before writing files or running commands (default)
+- **Dangerous commands blocked** - `rm -rf /`, fork bombs, etc. blocked in all modes
+- **Ctrl+C = stop** - Interrupts the agent immediately
+
+### Permission Modes
+
+| Mode | Description |
+|------|-------------|
+| Default | Prompts for file writes and bash commands |
+| `--accept-edits` | Auto-approves file edits, prompts for bash |
+| `--yolo` | Full autonomous mode (use with caution) |
 
 ## Uninstall
 
 ```bash
-rm -rf ~/.terminal-agent ~/.local/bin/agent
-podman rmi terminal-agent 2>/dev/null
+pip uninstall terminal-agent
 ```
 
 ## License
