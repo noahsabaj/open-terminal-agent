@@ -31,8 +31,26 @@ TOOL_COLOR = "\033[92m"       # Green
 ERROR_COLOR = "\033[91m"      # Red
 RESET = "\033[0m"
 
-# Dangerous commands that should NEVER be executed, even in --yolo mode
-# These are catastrophic system-level commands with no legitimate coding use
+# =============================================================================
+# DANGEROUS COMMAND BLOCKLIST
+# =============================================================================
+# PURPOSE: Catch obvious/accidental dangerous commands before execution.
+#
+# IMPORTANT: This is NOT a security boundary. These regex patterns are trivially
+# bypassed via variable expansion, command substitution, piping, encoding, etc.
+# Examples that bypass this blocklist:
+#   - rm -rf $(echo /)
+#   - cmd="/"; rm -rf $cmd
+#   - echo "rm -rf /" | sh
+#
+# THE REAL SECURITY: Container isolation (Podman sandbox) is the actual security
+# mechanism. Even if a dangerous command bypasses this blocklist, damage is
+# contained to the sandboxed environment.
+#
+# This blocklist exists to catch accidents (typos, LLM hallucinations, copy-paste
+# errors), not to prevent intentional attacks. Think of it as a seatbelt warning
+# light, not an airbag.
+# =============================================================================
 DANGEROUS_PATTERNS = {
     # System destruction
     r"rm\s+(-[a-zA-Z]*)*\s*-rf\s+/": "Recursively deletes the entire filesystem starting from root - would destroy the operating system and all data",
