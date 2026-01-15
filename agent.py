@@ -21,9 +21,7 @@ from pygments import highlight
 from pygments.lexers import get_lexer_for_filename, TextLexer
 from pygments.formatters import TerminalFormatter
 from rich.console import Console
-from rich.table import Table
 from rich.markdown import Markdown
-from rich import box
 
 # Terminal colors
 USER_COLOR = "\033[94m"      # Blue
@@ -82,50 +80,6 @@ YOLO_MODE = False
 # Rich console for pretty output
 console = Console()
 
-
-def render_markdown_with_tables(text: str):
-    """Render markdown text with pretty tables using box drawing characters."""
-    # Pattern to find markdown tables
-    table_pattern = re.compile(
-        r'(\|[^\n]+\|\n\|[-:\| ]+\|\n(?:\|[^\n]+\|\n?)+)',
-        re.MULTILINE
-    )
-
-    last_end = 0
-    for match in table_pattern.finditer(text):
-        # Print text before the table
-        before_text = text[last_end:match.start()].strip()
-        if before_text:
-            console.print(Markdown(before_text))
-
-        # Parse and render the table
-        table_text = match.group(1)
-        lines = [line.strip() for line in table_text.strip().split('\n') if line.strip()]
-
-        if len(lines) >= 2:
-            # Parse header
-            header_cells = [cell.strip() for cell in lines[0].split('|')[1:-1]]
-
-            # Create rich table with borders
-            rich_table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
-
-            for cell in header_cells:
-                rich_table.add_column(cell)
-
-            # Parse data rows (skip header and separator)
-            for line in lines[2:]:
-                row_cells = [cell.strip() for cell in line.split('|')[1:-1]]
-                if row_cells:
-                    rich_table.add_row(*row_cells)
-
-            console.print(rich_table)
-
-        last_end = match.end()
-
-    # Print remaining text after last table
-    remaining = text[last_end:].strip()
-    if remaining:
-        console.print(Markdown(remaining))
 
 # Token tracking
 class TokenTracker:
@@ -188,23 +142,6 @@ class Spinner:
         # Clear the spinner line
         sys.stdout.write("\r" + " " * 50 + "\r")
         sys.stdout.flush()
-
-
-def strip_markdown(text: str) -> str:
-    """Strip markdown formatting for cleaner terminal output."""
-    # Remove code blocks (```...```)
-    text = re.sub(r'```\w*\n?', '', text)
-    # Remove inline code backticks
-    text = re.sub(r'`([^`]+)`', r'\1', text)
-    # Remove bold **text**
-    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
-    # Remove italic *text*
-    text = re.sub(r'\*([^*]+)\*', r'\1', text)
-    # Remove headers (## Header -> Header)
-    text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
-    # Convert - bullets to •
-    text = re.sub(r'^- ', '• ', text, flags=re.MULTILINE)
-    return text
 
 
 def syntax_highlight(code: str, filename: str) -> str:
@@ -930,8 +867,8 @@ OUTPUT FORMATTING:
                 # No tool calls - print response and break inner loop
                 if response.message.content:
                     print(f"\n{ASSISTANT_COLOR}Assistant:{RESET}")
-                    # Use rich to render markdown with pretty tables
-                    render_markdown_with_tables(response.message.content)
+                    # Use Rich's built-in markdown rendering (uses markdown-it-py)
+                    console.print(Markdown(response.message.content))
                 break
 
         # Show token usage
