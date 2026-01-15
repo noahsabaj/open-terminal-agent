@@ -86,8 +86,14 @@ Inside the agent:
 
 ## Uninstall
 
+**If installed via pip:**
 ```bash
 pip uninstall open-terminal-agent
+```
+
+**If installed via curl:**
+```bash
+rm -rf ~/.terminal-agent ~/.local/bin/terminal-agent
 ```
 
 ## License

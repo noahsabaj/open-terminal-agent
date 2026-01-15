@@ -736,7 +736,7 @@ def print_thinking(thinking: str | None):
             print(f"{THINKING_COLOR}{thinking}{RESET}")
 
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 
 def get_short_path() -> str:

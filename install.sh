@@ -53,6 +53,19 @@ fi
 
 echo -e "${GREEN}✓${NC} Python $PYTHON_VERSION found"
 
+# Check for python3-venv
+if ! python3 -m venv --help &> /dev/null; then
+    echo -e "${RED}Error: python3-venv is required but not installed.${NC}"
+    echo ""
+    echo "Install it first:"
+    echo "  Ubuntu/Debian: sudo apt install python3-venv"
+    echo "  Fedora:        sudo dnf install python3-libs"
+    echo ""
+    exit 1
+fi
+
+echo -e "${GREEN}✓${NC} python3-venv available"
+
 # Check for ollama
 if ! command -v ollama &> /dev/null; then
     if [[ "$OS" == "linux" ]]; then
