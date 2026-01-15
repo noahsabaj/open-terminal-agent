@@ -166,7 +166,7 @@ def syntax_highlight(code: str, filename: str) -> str:
     """Apply syntax highlighting to code based on filename."""
     try:
         lexer = get_lexer_for_filename(filename)
-    except:
+    except Exception:
         lexer = TextLexer()
 
     formatter = TerminalFormatter()
@@ -530,7 +530,7 @@ def format_tool_result(name: str, result_json: str, args: dict = None) -> str:
     """Format a tool result for clean display."""
     try:
         result = json.loads(result_json)
-    except:
+    except Exception:
         return result_json
 
     if not result.get("success", False):
