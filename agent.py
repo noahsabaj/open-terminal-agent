@@ -386,6 +386,11 @@ def run_bash(command: str, timeout: int = 30, output_lines: str = "both") -> dic
             "reason": explanation
         }
 
+    # Validate/clamp inputs
+    timeout = max(1, min(600, timeout))  # 1 second to 10 minutes
+    if output_lines not in ("first", "last", "both", "all"):
+        output_lines = "both"
+
     try:
         result = subprocess.run(
             command,
